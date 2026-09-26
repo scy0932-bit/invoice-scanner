@@ -13,6 +13,8 @@ const FIELDS = [
   { key: "totalAmount",   label: "Total Amount (RM)",  width: 130 },
 ];
 
+const SCAN_LIMIT = 5;
+
 const SYSTEM_PROMPT = `You are an expert invoice data extractor. Extract invoice data from the provided image or document.
 Return ONLY a valid JSON array (no markdown, no explanation, no backticks) with this exact structure:
 [
@@ -48,9 +50,12 @@ export default function Home() {
   const [scanMsg, setScanMsg] = useState("");
   const [error, setError] = useState("");
   const [dragOver, setDragOver] = useState(false);
+  const [scanCount, setScanCount] = useState(0);
   const fileRef = useRef();
 
   const scanFile = useCallback(async (file) => {
+    if (scanCount >= SCAN_LIMIT) return;
+
     const isImage = file.type.startsWith("image/");
     const isPDF = file.type === "application/pdf";
     if (!isImage && !isPDF) {
@@ -96,6 +101,7 @@ export default function Home() {
 
       const newRows = extracted.map((r) => ({ id: crypto.randomUUID(), ...r }));
       setRows((prev) => [...prev, ...newRows]);
+      setScanCount((prev) => prev + 1);
       setScanMsg(`✓ Extracted ${newRows.length} line item(s) from ${file.name}`);
     } catch (e) {
       setError(e.message);
@@ -103,9 +109,12 @@ export default function Home() {
     } finally {
       setScanning(false);
     }
-  }, []);
+  }, [scanCount]);
 
-  const handleFiles = (files) => Array.from(files).forEach(scanFile);
+  const handleFiles = (files) => {
+    const remaining = SCAN_LIMIT - scanCount;
+    Array.from(files).slice(0, remaining).forEach(scanFile);
+  };
 
   const updateCell = (id, key, val) =>
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, [key]: val } : r)));
@@ -117,21 +126,16 @@ export default function Home() {
     const body = rows.map((r) => FIELDS.map((f) => r[f.key] || ""));
     const ws = XLSX.utils.aoa_to_sheet([headers, ...body]);
     ws["!cols"] = FIELDS.map((f) => ({ wch: Math.round(f.width / 7) }));
-
-    // Bold header row
-    for (let c = 0; c < FIELDS.length; c++) {
-      const cell = XLSX.utils.encode_cell({ r: 0, c });
-      if (ws[cell]) ws[cell].s = { font: { bold: true } };
-    }
-
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Invoices");
     XLSX.writeFile(wb, `invoices_${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
 
+  const limitReached = scanCount >= SCAN_LIMIT;
+
   return (
     <div style={{ minHeight: "100vh", background: "#0f1117", color: "#e8eaf0", fontFamily: "inherit" }}>
-      {/* ── Header ── */}
+      {/* Header */}
       <header style={{ borderBottom: "1px solid #1e2130", padding: "18px 32px", display: "flex", alignItems: "center", gap: 14 }}>
         <div style={{ width: 38, height: 38, borderRadius: 9, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
           📄
@@ -140,7 +144,11 @@ export default function Home() {
           <h1 style={{ fontSize: 17, fontWeight: 700, letterSpacing: "-0.3px" }}>Invoice Scanner</h1>
           <p style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>AI-powered • Export to Excel • SST-ready</p>
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          {/* Scan counter badge */}
+          <div style={{ fontSize: 12, color: limitReached ? "#f87171" : "#6b7280", background: "#1e2130", padding: "6px 12px", borderRadius: 6, border: `1px solid ${limitReached ? "#f87171" : "#2a2d3e"}` }}>
+            {limitReached ? "Trial limit reached" : `${scanCount} / ${SCAN_LIMIT} free scans used`}
+          </div>
           {rows.length > 0 && (
             <>
               <Btn onClick={() => setRows((p) => [...p, emptyRow()])} color="#1e2130" text="#a5b4fc">+ Add Row</Btn>
@@ -152,38 +160,53 @@ export default function Home() {
       </header>
 
       <main style={{ padding: "28px 32px" }}>
-        {/* ── Drop Zone ── */}
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
-          onClick={() => !scanning && fileRef.current.click()}
-          style={{
-            border: `2px dashed ${dragOver ? "#6366f1" : "#2a2d3e"}`,
-            borderRadius: 12, padding: "40px 24px", textAlign: "center",
-            cursor: scanning ? "wait" : "pointer",
-            background: dragOver ? "rgba(99,102,241,0.06)" : "#13151f",
-            transition: "border-color 0.2s, background 0.2s",
-            marginBottom: 24,
-          }}
-        >
-          <input ref={fileRef} type="file" accept="image/*,.pdf" multiple style={{ display: "none" }}
-            onChange={(e) => handleFiles(e.target.files)} />
-          {scanning ? (
-            <div style={{ color: "#a5b4fc" }}>
-              <Spinner />
-              <p style={{ marginTop: 12, fontWeight: 500 }}>{scanMsg || "Scanning…"}</p>
-            </div>
-          ) : (
-            <>
-              <div style={{ fontSize: 34, marginBottom: 10 }}>🧾</div>
-              <p style={{ fontWeight: 600, fontSize: 15, color: "#c7d2fe" }}>Drop invoices here or click to upload</p>
-              <p style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>JPG · PNG · PDF &nbsp;|&nbsp; Multiple files allowed</p>
-            </>
-          )}
-        </div>
+        {/* Drop Zone */}
+        {!limitReached ? (
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
+            onClick={() => !scanning && fileRef.current.click()}
+            style={{
+              border: `2px dashed ${dragOver ? "#6366f1" : "#2a2d3e"}`,
+              borderRadius: 12, padding: "40px 24px", textAlign: "center",
+              cursor: scanning ? "wait" : "pointer",
+              background: dragOver ? "rgba(99,102,241,0.06)" : "#13151f",
+              transition: "border-color 0.2s, background 0.2s",
+              marginBottom: 24,
+            }}
+          >
+            <input ref={fileRef} type="file" accept="image/*,.pdf" multiple style={{ display: "none" }}
+              onChange={(e) => handleFiles(e.target.files)} />
+            {scanning ? (
+              <div style={{ color: "#a5b4fc" }}>
+                <Spinner />
+                <p style={{ marginTop: 12, fontWeight: 500 }}>{scanMsg || "Scanning…"}</p>
+              </div>
+            ) : (
+              <>
+                <div style={{ fontSize: 34, marginBottom: 10 }}>🧾</div>
+                <p style={{ fontWeight: 600, fontSize: 15, color: "#c7d2fe" }}>Drop invoices here or click to upload</p>
+                <p style={{ fontSize: 12, color: "#6b7280", marginTop: 6 }}>JPG · PNG · PDF &nbsp;|&nbsp; {SCAN_LIMIT - scanCount} free scan{SCAN_LIMIT - scanCount !== 1 ? "s" : ""} remaining</p>
+              </>
+            )}
+          </div>
+        ) : (
+          /* Limit reached banner */
+          <div style={{ background: "#13151f", border: "2px dashed #374151", borderRadius: 12, padding: "40px 24px", textAlign: "center", marginBottom: 24 }}>
+            <div style={{ fontSize: 34, marginBottom: 10 }}>🔒</div>
+            <p style={{ fontWeight: 600, fontSize: 15, color: "#f87171", marginBottom: 8 }}>Free trial limit reached (5/5 scans used)</p>
+            <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>You've used all your free scans. To continue scanning invoices, please contact us.</p>
+            <a
+              href="mailto:your@email.com?subject=Invoice Scanner - Upgrade Request"
+              style={{ display: "inline-block", background: "#6366f1", color: "#fff", padding: "10px 24px", borderRadius: 8, fontSize: 14, fontWeight: 600, textDecoration: "none" }}
+            >
+              Contact to Upgrade →
+            </a>
+          </div>
+        )}
 
-        {/* ── Status messages ── */}
+        {/* Status messages */}
         {scanMsg && !scanning && (
           <Banner color="rgba(99,102,241,0.12)" border="rgba(99,102,241,0.35)" text="#a5b4fc">{scanMsg}</Banner>
         )}
@@ -191,7 +214,7 @@ export default function Home() {
           <Banner color="rgba(248,113,113,0.1)" border="rgba(248,113,113,0.35)" text="#f87171">⚠ {error}</Banner>
         )}
 
-        {/* ── Table ── */}
+        {/* Table */}
         {rows.length > 0 && (
           <>
             <div style={{ overflowX: "auto", borderRadius: 10, border: "1px solid #1e2130" }}>
