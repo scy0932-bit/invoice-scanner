@@ -198,7 +198,7 @@ export default function Home() {
             <p style={{ fontWeight: 600, fontSize: 15, color: "#f87171", marginBottom: 8 }}>Free trial limit reached (5/5 scans used)</p>
             <p style={{ fontSize: 13, color: "#6b7280", marginBottom: 16 }}>You've used all your free scans. To continue scanning invoices, please contact us.</p>
             <a
-              href="mailto:your@email.com?subject=Invoice Scanner - Upgrade Request"
+              href="mailto:scy0932@gmail.com?subject=Invoice Scanner - Upgrade Request"
               style={{ display: "inline-block", background: "#6366f1", color: "#fff", padding: "10px 24px", borderRadius: 8, fontSize: 14, fontWeight: 600, textDecoration: "none" }}
             >
               Contact to Upgrade →
